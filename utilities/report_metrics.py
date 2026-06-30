@@ -5,6 +5,7 @@ from decimal import Decimal
 import duckdb
 
 from run import fill_book, load_rows, match_orderbooks, outcomes, wallet_activity
+from utilities.check_chainlink_outcomes import get_stats
 
 
 source = "data/wallet_activity.parquet"
@@ -136,41 +137,10 @@ def main():
 
     print_simulation()
 
-    print_query(
-        "CHAINLINK CHECK",
-        f"""
-        WITH oracle_prices AS (
-            SELECT ts_ms, mid
-            FROM read_parquet('{prices}')
-        ),
-        checks AS (
-            SELECT
-                outcome.winning_outcome,
-                start_price.mid AS start_price,
-                end_price.mid AS end_price,
-                CASE
-                    WHEN end_price.mid >= start_price.mid THEN 'Up'
-                    ELSE 'Down'
-                END AS expected_outcome
-            FROM read_parquet('data/market_outcomes.parquet') outcome
-            LEFT JOIN oracle_prices start_price
-                ON start_price.ts_ms = outcome.start_ts_ms
-            LEFT JOIN oracle_prices end_price
-                ON end_price.ts_ms = outcome.end_ts_ms
-        )
-        SELECT
-            count(*) AS markets,
-            count(*) FILTER (
-                WHERE start_price IS NOT NULL AND end_price IS NOT NULL
-            ) AS covered,
-            count(*) FILTER (
-                WHERE start_price IS NOT NULL
-                  AND end_price IS NOT NULL
-                  AND winning_outcome = expected_outcome
-            ) AS matches
-        FROM checks
-        """,
-    )
+    total, covered, matches, _ = get_stats()
+    print("\nCHAINLINK CHECK")
+    print(total, covered, matches)
+
     print_query(
         "WALLET BEHAVIOR",
         f"""

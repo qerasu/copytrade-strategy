@@ -7,8 +7,8 @@ outcomes = Path("data/market_outcomes.parquet")
 prices = Path("data/btc_chainlink_prices.parquet")
 
 
-def main():
-    total, covered, matches, mismatches = duckdb.sql(
+def get_stats():
+    return duckdb.sql(
         f"""
         WITH oracle_prices AS (
             SELECT ts_ms, mid
@@ -47,6 +47,10 @@ def main():
         FROM checks
         """
     ).fetchone()
+
+
+def main():
+    total, covered, matches, mismatches = get_stats()
 
     assert covered == matches + mismatches
 
