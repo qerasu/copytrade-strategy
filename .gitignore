@@ -1,3 +1,7 @@
 __pycache__/
 .venv/
 .DS_Store
+btc_chainlink_prices.parquet
+clob_orderbook_history.parquet
+market_outcomes.parquet
+wallet_activity.parquet

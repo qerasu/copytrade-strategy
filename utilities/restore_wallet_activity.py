@@ -30,9 +30,22 @@ def main():
             [tuple(row.get(column) for column in columns) for row in activity],
         )
 
-    # повторно удаляем дубликаты на случай пересечения интервалов API
     duckdb.execute(
-        "CREATE TEMP VIEW corrected_wallet AS SELECT DISTINCT * FROM fixed_wallet"
+        """
+        CREATE TEMP VIEW corrected_wallet AS
+        SELECT * EXCLUDE (duplicate_number)
+        FROM (
+            SELECT *,
+                   row_number() OVER (
+                       PARTITION BY proxyWallet, timestamp, conditionId, type,
+                                    size, transactionHash, price, asset, side,
+                                    outcomeIndex
+                       ORDER BY usdcSize DESC NULLS LAST
+                   ) AS duplicate_number
+            FROM fixed_wallet
+        )
+        WHERE duplicate_number = 1
+        """
     )
 
     rows, trades, markets = duckdb.sql(
