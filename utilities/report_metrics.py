@@ -35,11 +35,22 @@ def print_daily(title, path):
 
 
 def print_simulation():
+    activity = load_rows(wallet_activity)
     trades = [
         row
-        for row in load_rows(wallet_activity)
+        for row in activity
         if row["type"] == "TRADE" and row["side"] == "BUY"
     ]
+
+    redeemed_at = {
+        row["conditionId"]: row["timestamp"] * 1000
+        for row in activity
+        if row["type"] == "REDEEM"
+    }
+    trading_ended_at = max(
+        trade["timestamp"] * 1000 + 1_000 for trade in trades
+    )
+
     market_rows = load_rows(outcomes)
     winners = {row["condition_id"]: row["winning_token_id"] for row in market_rows}
     ends = {row["condition_id"]: row["end_ts_ms"] for row in market_rows}
@@ -72,7 +83,12 @@ def print_simulation():
         daily[date] += pnl
         markets[trade["conditionId"]] += pnl
         cash_flows.append((trade["timestamp"] * 1000 + 1_000, 0, -cost - fee))
-        cash_flows.append((resolved_at, 1, payout))
+
+        payout_at = redeemed_at.get(
+            trade["conditionId"],
+            max(trading_ended_at, resolved_at),
+        )
+        cash_flows.append((payout_at, 1, payout))
 
     before = payout_total - cost_total
     after = before - fee_total
@@ -153,7 +169,10 @@ def main():
             SELECT
                 conditionId,
                 count(*) AS trade_count,
-                min(outcome) AS selected_outcome
+                count(DISTINCT outcome) AS outcome_count,
+                CASE
+                    WHEN count(DISTINCT outcome) = 1 THEN min(outcome)
+                END AS selected_outcome
             FROM trades
             GROUP BY 1
         )
@@ -163,6 +182,7 @@ def main():
              WHERE type = 'REDEEM') AS redeems,
             count(*) FILTER (WHERE selected_outcome = 'Up') AS up_markets,
             count(*) FILTER (WHERE selected_outcome = 'Down') AS down_markets,
+            count(*) FILTER (WHERE outcome_count > 1) AS mixed_markets,
             round(avg(trade_count), 2) AS average_trades,
             median(trade_count) AS median_trades,
             min(trade_count) AS minimum_trades,
@@ -183,11 +203,14 @@ def main():
         SELECT
             round(avg(seconds_left), 2) AS average_seconds,
             median(seconds_left) AS median_seconds,
-            count(*) FILTER (WHERE seconds_left < 60) AS under_one_minute,
+            count(*) FILTER (
+                WHERE seconds_left >= 0 AND seconds_left < 60
+            ) AS under_one_minute,
             count(*) FILTER (
                 WHERE seconds_left >= 60 AND seconds_left < 300
             ) AS one_to_five_minutes,
-            count(*) FILTER (WHERE seconds_left >= 300) AS over_five_minutes
+            count(*) FILTER (WHERE seconds_left >= 300) AS over_five_minutes,
+            count(*) FILTER (WHERE seconds_left < 0) AS after_close
         FROM entries
         """,
     )
